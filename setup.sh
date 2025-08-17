@@ -265,15 +265,203 @@ else
     print_warning "Matrix server may not be responding correctly on HTTPS"
 fi
 
-# 15. Close HTTP port (optional)
+# 15. Deploy Element Web Client
+print_status "Deploying Element Web client..."
+cd /var/www
+ELEMENT_VERSION=$(curl -s https://api.github.com/repos/element-hq/element-web/releases/latest | grep tag_name | cut -d '"' -f 4)
+wget -q https://github.com/element-hq/element-web/releases/download/${ELEMENT_VERSION}/element-${ELEMENT_VERSION}.tar.gz
+tar -xzf element-${ELEMENT_VERSION}.tar.gz
+mv element-${ELEMENT_VERSION} element
+rm element-${ELEMENT_VERSION}.tar.gz
+
+# Configure Element Web
+cp element/config.sample.json element/config.json
+sed -i 's|"base_url": ".*"|"base_url": "https://'$DOMAIN'"|g' element/config.json
+sed -i 's|"server_name": ".*"|"server_name": "'$DOMAIN'"|g' element/config.json
+sed -i 's|"servers": \[".*"\]|"servers": ["'$DOMAIN'"]|g' element/config.json
+
+# Set permissions
+chown -R www-data:www-data element
+
+# Update nginx config to serve Element Web
+print_status "Updating nginx configuration for Element Web..."
+if [ -f "$REPO_DIR/config/nginx-matrix.conf" ]; then
+    cp $REPO_DIR/config/nginx-matrix.conf /etc/nginx/sites-available/$DOMAIN
+else
+    cat > /etc/nginx/sites-available/$DOMAIN << EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+    
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+    
+    location / {
+        return 301 https://\$server_name\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Serve Element Web client
+    location / {
+        root /var/www/element;
+        try_files \$uri \$uri/ /index.html;
+        add_header X-Frame-Options SAMEORIGIN;
+        add_header X-Content-Type-Options nosniff;
+        add_header X-XSS-Protection "1; mode=block";
+    }
+
+    # Matrix API endpoints
+    location ~* ^(\/_matrix|\/_synapse\/client) {
+        proxy_pass http://127.0.0.1:8008;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host \$host;
+        client_max_body_size 50M;
+        proxy_http_version 1.1;
+    }
+}
+EOF
+fi
+
+nginx -t && systemctl reload nginx
+
+# 16. Install WhatsApp Bridge
+print_status "=== Installing WhatsApp Bridge ==="
+
+# Download mautrix-whatsapp binary if not present
+if [ ! -f "$REPO_DIR/bin/mautrix-whatsapp" ]; then
+    print_status "Downloading mautrix-whatsapp binary..."
+    mkdir -p $REPO_DIR/bin
+    BRIDGE_VERSION=$(curl -s https://api.github.com/repos/mautrix/whatsapp/releases/latest | grep tag_name | cut -d '"' -f 4)
+    wget -q https://github.com/mautrix/whatsapp/releases/download/${BRIDGE_VERSION}/mautrix-whatsapp-amd64 -O $REPO_DIR/bin/mautrix-whatsapp
+    chmod +x $REPO_DIR/bin/mautrix-whatsapp
+    chown matrix:nogroup $REPO_DIR/bin/mautrix-whatsapp
+fi
+
+# Generate bridge configuration if not present
+if [ ! -f "$REPO_DIR/config/mautrix-whatsapp/config.yaml" ]; then
+    print_status "Generating WhatsApp bridge configuration..."
+    mkdir -p $REPO_DIR/config/mautrix-whatsapp
+    mkdir -p $REPO_DIR/logs
+    chown -R matrix:nogroup $REPO_DIR/logs
+    
+    cd $REPO_DIR
+    sudo -u matrix ./bin/mautrix-whatsapp --generate-example-config > /tmp/wa-config.yaml
+    mv /tmp/wa-config.yaml $REPO_DIR/config/mautrix-whatsapp/config.yaml
+    
+    # Configure bridge for our setup
+    sed -i "s|postgres://user:password@host/database?sslmode=disable|postgres://matrix:$MATRIX_DB_PASSWORD@localhost/matrix?sslmode=disable|g" config/mautrix-whatsapp/config.yaml
+    sed -i "s|address: http://example.localhost:8008|address: http://localhost:8008|g" config/mautrix-whatsapp/config.yaml
+    sed -i "s|domain: example.com|domain: $DOMAIN|g" config/mautrix-whatsapp/config.yaml
+    sed -i 's|"example.com": user|"'$DOMAIN'": user|g' config/mautrix-whatsapp/config.yaml
+    sed -i 's|"@admin:example.com": admin|"@admin:'$DOMAIN'": admin|g' config/mautrix-whatsapp/config.yaml
+    sed -i "s|filename: ./logs/bridge.log|filename: $REPO_DIR/logs/mautrix-whatsapp.log|g" config/mautrix-whatsapp/config.yaml
+    
+    chown -R matrix:nogroup $REPO_DIR/config/mautrix-whatsapp/
+fi
+
+# Generate appservice registration
+if [ ! -f "$REPO_DIR/config/mautrix-whatsapp/registration.yaml" ]; then
+    print_status "Generating bridge registration..."
+    cd $REPO_DIR
+    sudo -u matrix ./bin/mautrix-whatsapp -g -c config/mautrix-whatsapp/config.yaml -r config/mautrix-whatsapp/registration.yaml
+fi
+
+# Update Synapse config to include bridge registration
+if ! grep -q "app_service_config_files:" config/matrix-synapse/homeserver.yaml; then
+    print_status "Adding bridge registration to Synapse config..."
+    sed -i '/^# Enable registration/i\
+# Application services\
+app_service_config_files:\
+  - /home/matrix-ai/config/mautrix-whatsapp/registration.yaml\
+' config/matrix-synapse/homeserver.yaml
+fi
+
+# Install bridge systemd service
+print_status "Installing WhatsApp bridge service..."
+if [ -f "$REPO_DIR/config/mautrix-whatsapp.service" ]; then
+    cp $REPO_DIR/config/mautrix-whatsapp.service /etc/systemd/system/
+else
+    cat > /etc/systemd/system/mautrix-whatsapp.service << EOF
+[Unit]
+Description=Mautrix-WhatsApp bridge
+After=network.target matrix-synapse.service postgresql.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=matrix
+Group=nogroup
+WorkingDirectory=$REPO_DIR
+ExecStart=$REPO_DIR/bin/mautrix-whatsapp -c $REPO_DIR/config/mautrix-whatsapp/config.yaml --ignore-foreign-tables
+Environment=HOME=$REPO_DIR
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=$REPO_DIR
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
+EOF
+fi
+
+# Start services
+print_status "Starting services..."
+systemctl daemon-reload
+systemctl restart matrix-synapse
+sleep 3
+systemctl enable mautrix-whatsapp
+systemctl start mautrix-whatsapp
+
+# Wait for services to start
+sleep 5
+
+# 17. Close HTTP port (optional)
 print_status "Securing firewall (removing HTTP access)..."
 ufw delete allow 80/tcp
 
-print_status "=== Matrix Server Setup Complete ==="
-print_status "Matrix server is running at: https://$DOMAIN"
+# 18. Verify installations
+print_status "=== Verifying Installation ==="
+if systemctl is-active --quiet matrix-synapse; then
+    print_status "✓ Matrix Synapse is running"
+else
+    print_error "✗ Matrix Synapse failed to start"
+fi
+
+if systemctl is-active --quiet mautrix-whatsapp; then
+    print_status "✓ WhatsApp bridge is running"
+else
+    print_warning "✗ WhatsApp bridge failed to start (check logs: journalctl -xeu mautrix-whatsapp)"
+fi
+
+print_status "=== Setup Complete ==="
+print_status "Matrix server with WhatsApp bridge is running at: https://$DOMAIN"
+print_status "Element Web client is available at: https://$DOMAIN"
 print_warning "Next steps:"
-echo "1. Create admin user: /opt/matrix/synapse-venv/bin/register_new_matrix_user -c config/matrix-synapse/homeserver.yaml https://$DOMAIN"
-echo "2. Deploy Element Web client"
-echo "3. Test user registration and room functionality"
+echo "1. Create admin user: cd $REPO_DIR && /opt/matrix/synapse-venv/bin/register_new_matrix_user -c config/matrix-synapse/homeserver.yaml https://$DOMAIN"
+echo "2. Test Element Web access at https://$DOMAIN"
+echo "3. Connect WhatsApp by messaging @whatsappbot:$DOMAIN and typing 'login'"
 echo "4. Configure automatic SSL renewal: sudo crontab -e"
 echo "   Add: 0 12 * * * /usr/bin/certbot renew --quiet"
