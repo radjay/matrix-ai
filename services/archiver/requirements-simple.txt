@@ -1,0 +1,5 @@
+# Minimal requirements using system packages where possible
+matrix-nio
+supabase
+python-dotenv
+structlog

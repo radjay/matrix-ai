@@ -73,3 +73,5 @@ npm run ai:test
 - Integration tests for AI components
 - Performance tests for message processing
 - Security tests for API endpoints
+- Create temporary test scripts in `/tests/tmp/` folder
+- Clean up test scripts when no longer needed
