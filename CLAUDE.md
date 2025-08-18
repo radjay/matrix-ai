@@ -17,8 +17,17 @@ cp config.example.yaml config.yaml
 
 ### Development
 ```bash
-# Start development server
-npm run dev
+# Start all Matrix services
+./scripts/start-matrix.sh
+
+# Stop all Matrix services  
+./scripts/stop-matrix.sh
+
+# Restart all Matrix services
+./scripts/restart-matrix.sh
+
+# Check service status
+./scripts/status-matrix.sh
 
 # Run tests
 npm test
