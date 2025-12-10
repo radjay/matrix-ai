@@ -37,7 +37,7 @@ class UnifiedArchiver:
         """Initialize the archiver."""
         # Load config
         try:
-            config_path = "/home/matrix-ai/config/archiver/config.yaml"
+            config_path = "/home/matrix-ai/services/archiver/config/config.yaml"
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
             

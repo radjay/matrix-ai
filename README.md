@@ -59,7 +59,7 @@ After setup completes:
 1. **Create admin user**:
    ```bash
    cd /home/matrix-ai
-   /opt/matrix/synapse-venv/bin/register_new_matrix_user -c config/matrix-synapse/homeserver.yaml https://your-domain.com
+   /opt/matrix/synapse-venv/bin/register_new_matrix_user -c services/matrix-synapse/config/homeserver.yaml https://your-domain.com
    ```
 
 2. **Access Element Web**: Visit `https://your-domain.com`
@@ -73,9 +73,24 @@ After setup completes:
 ```
 Internet → nginx (SSL) → Matrix Synapse → PostgreSQL
              ↓                ↓
-      Element Web Client  WhatsApp Bridge
+      Element Web Client  WhatsApp Bridge → WhatsApp Web API
                                ↓
-                        WhatsApp Web API
+                          Archiver → Supabase (external archive)
+```
+
+## Repository Structure
+
+```
+services/
+├── archiver/          # Message archiver to Supabase (Python)
+├── whatsapp-bridge/   # WhatsApp integration (Go binary)
+├── matrix-synapse/    # Matrix server config
+└── ai/                # Future AI services
+
+scripts/               # Service management scripts
+logs/                  # Service logs - gitignored
+data/                  # Runtime data (media) - gitignored
+docs/                  # Documentation
 ```
 
 ## Documentation

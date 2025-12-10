@@ -1,0 +1,139 @@
+# Configuration file for Synapse.
+#
+# This is a YAML file: see [1] for a quick introduction. Note in particular
+# that *indentation is important*: all the elements of a list or dictionary
+# should have the same indentation.
+#
+# [1] https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html
+#
+# For more information on how to configure Synapse, including a complete accounting of
+# each option, go to docs/usage/configuration/config_documentation.md or
+# https://element-hq.github.io/synapse/latest/usage/configuration/config_documentation.html
+server_name: "matrix.radx.dev"
+pid_file: /home/matrix-ai/logs/homeserver.pid
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    bind_addresses: ['::1', '127.0.0.1']
+    resources:
+      - names: [client, federation]
+        compress: false
+database:
+  name: psycopg2
+  args:
+    user: matrix
+    password: "C5YQvsWGItVlDtU7UTr8DYilCJWLaeESKJ3VvumAfVA="
+    database: matrix
+    host: localhost
+    port: 5432
+    cp_min: 5
+    cp_max: 10
+
+log_config: "/home/matrix-ai/services/matrix-synapse/config/matrix.radx.dev.log.config"
+media_store_path: /home/matrix-ai/data/media_store
+registration_shared_secret: "t-S@Mhqf6PG8:w,oxDJBQw.EF4R7.2,qQMarEb&6T7L.Y28O:n"
+report_stats: false
+macaroon_secret_key: "h*i+X3^@9Y~1t*edDGSV6t:h.LPXmDFQr:T.ygsneQasA#a@mJ"
+form_secret: "2_Ejskxc:xL#=&X:5SB.NydN7P+1#x0N#XYkY@#R9Js36b:p_V"
+signing_key_path: "/home/matrix-ai/services/matrix-synapse/config/matrix.radx.dev.signing.key"
+
+# Enable registration
+enable_registration: true
+enable_registration_without_verification: true
+
+# Application services
+app_service_config_files:
+  - /home/matrix-ai/services/whatsapp-bridge/config/registration.yaml
+
+trusted_key_servers:
+  - server_name: "matrix.org"
+
+# Rate limiting configuration - very relaxed for private server
+rc_login:
+  per_second: 100
+  burst_count: 1000
+
+rc_registration:
+  per_second: 100
+  burst_count: 1000
+
+rc_message:
+  per_second: 1000
+  burst_count: 10000
+
+rc_joins:
+  local:
+    per_second: 100
+    burst_count: 1000
+  remote:
+    per_second: 100
+    burst_count: 1000
+
+rc_3pid_validation:
+  per_second: 100
+  burst_count: 1000
+
+rc_invites:
+  per_room:
+    per_second: 100
+    burst_count: 1000
+  per_user:
+    per_second: 100
+    burst_count: 1000
+
+rc_federation:
+  window_size: 1000
+  sleep_limit: 100
+  sleep_delay: 500
+  reject_limit: 1000
+  concurrent: 100
+
+# Admin API rate limiting
+rc_admin_redaction:
+  per_second: 100
+  burst_count: 1000
+
+# Permissive settings for isolated server
+# Allow admins to bypass room access restrictions
+allow_per_room_profiles: true
+
+# Make room creation more permissive
+room_creation:
+  default_room_version: "10"
+  
+# Allow server admins to bypass room restrictions
+# This allows admins to join private rooms and perform admin actions
+admin_contact: "mailto:admin@matrix.radx.dev"
+server_admin_contact: "admin@matrix.radx.dev"
+
+# Enable server admin APIs
+enable_admin_api: true
+
+# More permissive federation settings for local admin operations
+federation_domain_whitelist: []
+
+# Enable guest access globally
+allow_guest_access: true
+
+# Auto-join rooms for new users (optional)
+auto_join_rooms:
+  - "#general:matrix.radx.dev"
+
+# Make invitations more permissive
+enable_3pid_invites: true
+
+# Experimental: Try to bypass room access restrictions for admins
+# Note: These may not be standard Synapse options but worth trying on isolated server
+experimental_features:
+  admin_bypass_room_restrictions: true
+
+# Make room join/invite process more lenient for isolated server
+require_membership_for_aliases: false
+
+# Allow any user to peek into any room (for isolated server)
+allow_per_room_profiles: true
+allow_guest_peek: true
+
+# vim:ft=yaml

@@ -1,28 +1,24 @@
 {
   "name": "matrix-ai-server",
   "version": "1.0.0",
-  "description": "AI-enabled Matrix server with message summarization and chat capabilities",
-  "main": "src/index.js",
+  "description": "Matrix server with WhatsApp bridge and AI-powered features",
   "scripts": {
-    "dev": "nodemon src/index.js",
-    "start": "node src/index.js",
-    "test": "jest",
-    "lint": "eslint src/",
-    "typecheck": "tsc --noEmit",
-    "migrate": "node scripts/migrate.js",
-    "seed": "node scripts/seed.js",
-    "models:download": "node scripts/download-models.js",
-    "ai:test": "node scripts/test-ai.js"
+    "start": "./scripts/start-matrix.sh",
+    "stop": "./scripts/stop-matrix.sh",
+    "restart": "./scripts/restart-matrix.sh",
+    "status": "./scripts/status-matrix.sh",
+    "logs": "tail -f logs/archiver.log",
+    "logs:bridge": "tail -f logs/bridge.log",
+    "logs:synapse": "journalctl -f -u matrix-synapse",
+    "logs:archiver": "tail -f logs/archiver.log",
+    "versions": "echo \"Synapse: $(/opt/matrix/synapse-venv/bin/python -c 'import synapse; print(synapse.__version__)')\" && echo \"Element: $(cat /var/www/element/version)\" && echo \"WhatsApp: $(./services/whatsapp-bridge/bin/mautrix-whatsapp --version 2>&1 | head -1)\""
   },
   "keywords": [
     "matrix",
-    "ai",
-    "chat",
-    "messaging",
-    "summarization"
+    "synapse",
+    "whatsapp",
+    "bridge",
+    "chat"
   ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {},
-  "devDependencies": {}
+  "license": "MIT"
 }

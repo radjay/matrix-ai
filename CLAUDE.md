@@ -3,84 +3,94 @@
 ## Project Context
 AI-enabled Matrix server with message summarization, chat with message history, content analysis, and enhanced user interactions.
 
+## Repository Structure
+
+```
+/home/matrix-ai/
+├── services/                    # All services live here
+│   ├── archiver/               # Message archiver (Python)
+│   │   ├── bin/                # Main executables
+│   │   ├── config/             # Service configuration
+│   │   ├── data/               # Migrations, backups
+│   │   └── scripts/            # Helper scripts
+│   │
+│   ├── whatsapp-bridge/        # WhatsApp bridge (Go)
+│   │   ├── bin/                # mautrix-whatsapp binary
+│   │   └── config/             # Bridge configuration
+│   │
+│   ├── matrix-synapse/         # Matrix server config
+│   │   └── config/             # Synapse configuration
+│   │
+│   └── ai/                     # Future AI services
+│       └── models/             # AI model storage
+│
+├── scripts/                    # Global orchestration scripts
+│   ├── start-matrix.sh
+│   ├── stop-matrix.sh
+│   ├── status-matrix.sh
+│   └── setup.sh
+│
+├── logs/                       # Service logs (gitignored)
+│
+├── data/                       # Runtime data (gitignored)
+│   └── media_store/            # Matrix media files
+│
+├── docs/                       # Documentation
+│   └── prds/                   # Product requirement docs
+│
+└── tests/                      # Test files
+    └── tmp/                    # Temporary test scripts
+```
+
 ## Development Commands
 
-### Setup
+### Service Management
 ```bash
-# Install dependencies
-npm install
-
-# Setup configuration
-cp config.example.yaml config.yaml
-# Edit config.yaml with your settings
+npm start          # Start all services
+npm stop           # Stop all services
+npm restart        # Restart all services
+npm run status     # Check service status
+npm run versions   # Show installed versions
 ```
 
-### Development
+### Viewing Logs
 ```bash
-# Start all Matrix services
+npm run logs           # Archiver logs (default)
+npm run logs:bridge    # WhatsApp bridge logs
+npm run logs:synapse   # Matrix Synapse logs
+npm run logs:archiver  # Archiver logs
+```
+
+### Direct Script Access
+```bash
 ./scripts/start-matrix.sh
-
-# Stop all Matrix services  
 ./scripts/stop-matrix.sh
-
-# Restart all Matrix services
-./scripts/restart-matrix.sh
-
-# Check service status
 ./scripts/status-matrix.sh
-
-# Run tests
-npm test
-
-# Lint code
-npm run lint
-
-# Type check
-npm run typecheck
-```
-
-### Database
-```bash
-# Run migrations
-npm run migrate
-
-# Seed development data
-npm run seed
-```
-
-### AI Components
-```bash
-# Download/update AI models
-npm run models:download
-
-# Test AI functionality
-npm run ai:test
 ```
 
 ## Development Rules
 
 ### Code Standards
 - Follow existing code patterns and conventions
-- Use TypeScript for type safety where applicable
+- Python for archiver/AI services, shell scripts for orchestration
 - Write tests for new functionality
 - Document AI model requirements and configurations
 
 ### Security Requirements
 - Never commit secrets or API keys to repository
-- Use environment variables for all sensitive configuration
+- Config files with secrets are gitignored (only .example files tracked)
+- Use environment variables for sensitive configuration
 - Validate all user inputs, especially for AI processing
-- Follow Matrix security best practices for federation
 
-### AI Implementation Guidelines
-- Prefer local models when possible for privacy
-- Implement proper error handling for AI operations
-- Cache AI results appropriately to reduce processing costs
-- Respect user privacy in message analysis
+### Adding New Services
+1. Create directory under `services/<service-name>/`
+2. Include: `bin/`, `config/`, `scripts/` subdirectories
+3. Add `.example` config files (actual configs are gitignored)
+4. Update `scripts/start-matrix.sh` if service should auto-start
+5. Document in this file
 
 ### Testing Standards
 - Write unit tests for core functionality
 - Integration tests for AI components
-- Performance tests for message processing
-- Security tests for API endpoints
 - Create temporary test scripts in `/tests/tmp/` folder
 - Clean up test scripts when no longer needed

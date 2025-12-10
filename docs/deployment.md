@@ -1,5 +1,20 @@
 # Matrix Server with WhatsApp Bridge - Deployment Guide
 
+## Component Versions
+
+This repository is tested with the following versions:
+
+| Component | Version | Release Date |
+|-----------|---------|--------------|
+| **Matrix Synapse** | 1.143.0 | November 2025 |
+| **Element Web** | 1.12.1 | December 2025 |
+| **mautrix-whatsapp** | 0.12.4 | August 2025 |
+
+> **Note**: Check for newer versions before deploying:
+> - [Synapse Releases](https://github.com/element-hq/synapse/releases)
+> - [Element Web Releases](https://github.com/element-hq/element-web/releases)
+> - [mautrix-whatsapp Releases](https://github.com/mautrix/whatsapp/releases)
+
 ## Quick Setup (Fresh VPS)
 
 Complete automated setup for Matrix server with WhatsApp bridge integration.
@@ -7,7 +22,7 @@ Complete automated setup for Matrix server with WhatsApp bridge integration.
 ### What Gets Installed
 
 - **Matrix Synapse** - Matrix homeserver with PostgreSQL database
-- **Element Web** - Web client interface accessible via browser  
+- **Element Web** - Web client interface accessible via browser
 - **WhatsApp Bridge** - Bidirectional messaging between WhatsApp and Matrix
 - **nginx** - Reverse proxy with SSL/TLS termination
 - **Let's Encrypt** - Automatic SSL certificate management
@@ -33,7 +48,7 @@ cd /home/matrix-ai
 echo "MATRIX_DB_PASSWORD=$(openssl rand -base64 32)" > .env
 
 # Edit setup.sh to set your domain and email
-sudo nano setup.sh
+sudo nano scripts/setup.sh
 # Update these lines:
 # DOMAIN="your-domain.com"
 # EMAIL="your-email@domain.com"
@@ -41,7 +56,7 @@ sudo nano setup.sh
 
 #### 3. Run Automated Setup
 ```bash
-sudo bash setup.sh
+sudo bash scripts/setup.sh
 ```
 
 The script will automatically:
@@ -60,7 +75,9 @@ After the script completes successfully:
 #### 1. Create Admin User
 ```bash
 cd /home/matrix-ai
-/opt/matrix/synapse-venv/bin/register_new_matrix_user -c config/matrix-synapse/homeserver.yaml https://your-domain.com
+/opt/matrix/synapse-venv/bin/register_new_matrix_user \
+  -c services/matrix-synapse/config/homeserver.yaml \
+  https://your-domain.com
 ```
 
 #### 2. Test Matrix Server
@@ -81,19 +98,25 @@ sudo crontab -e
 0 12 * * * /usr/bin/certbot renew --quiet
 ```
 
+---
+
 ## Manual Installation Steps
 
-If you prefer to install components individually:
+If you prefer to install components individually or need to update specific components.
 
-### Phase 1: Matrix Server Setup
+### Phase 1: System Dependencies
 
-1. **System Dependencies**
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3 python3-pip python3-venv postgresql postgresql-contrib nginx certbot python3-certbot-nginx ufw fail2ban
+sudo apt install -y \
+  python3 python3-pip python3-venv \
+  postgresql postgresql-contrib \
+  nginx certbot python3-certbot-nginx \
+  ufw fail2ban wget curl
 ```
 
-2. **PostgreSQL Setup**
+### Phase 2: PostgreSQL Setup
+
 ```bash
 sudo systemctl start postgresql
 sudo systemctl enable postgresql
@@ -102,176 +125,250 @@ sudo -u postgres createdb matrix --owner=matrix
 sudo -u postgres psql -c "ALTER USER matrix PASSWORD 'your-secure-password';"
 ```
 
-3. **Matrix Synapse Installation**
+### Phase 3: Matrix Synapse Installation
+
 ```bash
+# Create virtual environment
 sudo mkdir -p /opt/matrix
 sudo python3 -m venv /opt/matrix/synapse-venv
-sudo /opt/matrix/synapse-venv/bin/pip install matrix-synapse[postgres]
+
+# Install Synapse (specific version)
+sudo /opt/matrix/synapse-venv/bin/pip install 'matrix-synapse[postgres]==1.143.0'
+
+# Or install latest
+sudo /opt/matrix/synapse-venv/bin/pip install 'matrix-synapse[postgres]'
 ```
 
-4. **Configuration and SSL**
-- Generate Synapse config
-- Configure nginx reverse proxy  
-- Obtain Let's Encrypt certificates
-- Start Matrix services
+**Configuration:**
+- Copy example config: `cp services/matrix-synapse/config/homeserver.example.yaml services/matrix-synapse/config/homeserver.yaml`
+- Edit with your domain and database credentials
+- Generate signing key if needed
 
-### Phase 2: Element Web Client
-
-1. **Download and Configure**
+**Systemd Service:**
 ```bash
+# Link service file
+sudo ln -sf /home/matrix-ai/services/matrix-synapse/matrix-synapse.service \
+  /etc/systemd/system/matrix-synapse.service
+sudo systemctl daemon-reload
+sudo systemctl enable matrix-synapse
+```
+
+### Phase 4: Element Web Installation
+
+```bash
+# Set version
+ELEMENT_VERSION="1.12.1"
+
+# Download and extract
 cd /var/www
-sudo wget https://github.com/element-hq/element-web/releases/latest/download/element-*.tar.gz
-sudo tar -xzf element-*.tar.gz
-sudo mv element-* element
+sudo wget "https://github.com/element-hq/element-web/releases/download/v${ELEMENT_VERSION}/element-v${ELEMENT_VERSION}.tar.gz"
+sudo tar -xzf "element-v${ELEMENT_VERSION}.tar.gz"
+sudo mv "element-v${ELEMENT_VERSION}" element
+sudo rm "element-v${ELEMENT_VERSION}.tar.gz"
+
+# Configure
 sudo cp element/config.sample.json element/config.json
-# Edit config.json to point to your domain
+sudo nano element/config.json
+# Set "default_server_config.m.homeserver.base_url" to your domain
 ```
 
-2. **Update nginx Configuration**
-- Add Element Web serving location
-- Maintain Matrix API proxy endpoints
-
-### Phase 3: WhatsApp Bridge
-
-1. **Download Bridge Binary**
+**Updating Element Web:**
 ```bash
-wget https://github.com/mautrix/whatsapp/releases/latest/download/mautrix-whatsapp-amd64
-chmod +x mautrix-whatsapp-amd64
+ELEMENT_VERSION="1.12.1"  # Change to new version
+cd /var/www
+sudo wget "https://github.com/element-hq/element-web/releases/download/v${ELEMENT_VERSION}/element-v${ELEMENT_VERSION}.tar.gz"
+sudo tar -xzf "element-v${ELEMENT_VERSION}.tar.gz"
+sudo mv element element.old
+sudo mv "element-v${ELEMENT_VERSION}" element
+sudo cp element.old/config.json element/config.json
+sudo rm "element-v${ELEMENT_VERSION}.tar.gz"
+# Test, then: sudo rm -rf element.old
 ```
 
-2. **Configure Bridge**
+### Phase 5: WhatsApp Bridge Installation
+
 ```bash
-./mautrix-whatsapp-amd64 --generate-example-config > config.yaml
-# Edit config.yaml with database and homeserver details
+# Set version
+WHATSAPP_VERSION="0.12.4"
+
+# Download binary
+cd /home/matrix-ai/services/whatsapp-bridge/bin
+sudo wget "https://github.com/mautrix/whatsapp/releases/download/v${WHATSAPP_VERSION}/mautrix-whatsapp-amd64" \
+  -O mautrix-whatsapp
+sudo chmod +x mautrix-whatsapp
+
+# Verify
+./mautrix-whatsapp --version
 ```
 
-3. **Register with Matrix**
+**Configuration:**
 ```bash
-./mautrix-whatsapp-amd64 -g -c config.yaml -r registration.yaml
-# Add registration.yaml to Synapse app_service_config_files
+# Generate example config (if starting fresh)
+cd /home/matrix-ai/services/whatsapp-bridge
+./bin/mautrix-whatsapp --generate-example-config > config/config.yaml
+
+# Edit configuration
+nano config/config.yaml
+# Set homeserver URL, database, and permissions
+
+# Generate registration file
+./bin/mautrix-whatsapp -g -c config/config.yaml -r config/registration.yaml
+
+# Add to Synapse config (homeserver.yaml):
+# app_service_config_files:
+#   - /home/matrix-ai/services/whatsapp-bridge/config/registration.yaml
 ```
 
-4. **Start Bridge Service**
+**Updating WhatsApp Bridge:**
 ```bash
-# Create systemd service
-# Start and enable bridge
+WHATSAPP_VERSION="0.12.4"  # Change to new version
+cd /home/matrix-ai/services/whatsapp-bridge/bin
+
+# Stop bridge first
+pkill -f mautrix-whatsapp
+
+# Download new version
+sudo wget "https://github.com/mautrix/whatsapp/releases/download/v${WHATSAPP_VERSION}/mautrix-whatsapp-amd64" \
+  -O mautrix-whatsapp.new
+sudo chmod +x mautrix-whatsapp.new
+sudo mv mautrix-whatsapp mautrix-whatsapp.old
+sudo mv mautrix-whatsapp.new mautrix-whatsapp
+
+# Restart services
+cd /home/matrix-ai
+./scripts/start-matrix.sh
 ```
+
+---
+
+## Updating All Components
+
+Use these commands to update to the latest versions:
+
+```bash
+cd /home/matrix-ai
+
+# Stop all services
+./scripts/stop-matrix.sh
+
+# Update Matrix Synapse
+sudo /opt/matrix/synapse-venv/bin/pip install --upgrade matrix-synapse
+
+# Update Element Web (replace version as needed)
+ELEMENT_VERSION="1.12.1"
+cd /var/www
+sudo wget "https://github.com/element-hq/element-web/releases/download/v${ELEMENT_VERSION}/element-v${ELEMENT_VERSION}.tar.gz"
+sudo tar -xzf "element-v${ELEMENT_VERSION}.tar.gz"
+sudo mv element element.old && sudo mv "element-v${ELEMENT_VERSION}" element
+sudo cp element.old/config.json element/config.json
+sudo rm "element-v${ELEMENT_VERSION}.tar.gz"
+
+# Update WhatsApp Bridge (replace version as needed)
+WHATSAPP_VERSION="0.12.4"
+cd /home/matrix-ai/services/whatsapp-bridge/bin
+sudo wget "https://github.com/mautrix/whatsapp/releases/download/v${WHATSAPP_VERSION}/mautrix-whatsapp-amd64" -O mautrix-whatsapp.new
+sudo chmod +x mautrix-whatsapp.new
+sudo mv mautrix-whatsapp mautrix-whatsapp.old && sudo mv mautrix-whatsapp.new mautrix-whatsapp
+
+# Start all services
+cd /home/matrix-ai
+./scripts/start-matrix.sh
+
+# Verify versions
+echo "Synapse: $(/opt/matrix/synapse-venv/bin/python -c 'import synapse; print(synapse.__version__)')"
+echo "Element: $(cat /var/www/element/version)"
+echo "WhatsApp: $(./services/whatsapp-bridge/bin/mautrix-whatsapp --version)"
+```
+
+---
+
+## Service Management
+
+```bash
+# Start all services
+./scripts/start-matrix.sh
+
+# Stop all services
+./scripts/stop-matrix.sh
+
+# Check status
+./scripts/status-matrix.sh
+
+# View logs
+tail -f logs/archiver.log
+tail -f logs/bridge.log
+sudo journalctl -f -u matrix-synapse
+```
+
+---
+
+## File Locations
+
+| Component | Location |
+|-----------|----------|
+| **Synapse Config** | `/home/matrix-ai/services/matrix-synapse/config/` |
+| **Synapse Binary** | `/opt/matrix/synapse-venv/` |
+| **WhatsApp Bridge** | `/home/matrix-ai/services/whatsapp-bridge/` |
+| **Archiver** | `/home/matrix-ai/services/archiver/` |
+| **Element Web** | `/var/www/element/` |
+| **nginx Config** | `/etc/nginx/sites-available/your-domain` |
+| **Logs** | `/home/matrix-ai/logs/` |
+| **Media Store** | `/home/matrix-ai/data/media_store/` |
+| **SSL Certificates** | `/etc/letsencrypt/live/your-domain/` |
+
+---
 
 ## Troubleshooting
 
-### Common Issues
-
-**Matrix Synapse won't start:**
+### Matrix Synapse won't start
 ```bash
 sudo journalctl -xeu matrix-synapse
 # Check database connection and config file permissions
 ```
 
-**WhatsApp bridge not responding:**
+### WhatsApp bridge not responding
 ```bash
-sudo journalctl -xeu mautrix-whatsapp
+tail -f /home/matrix-ai/logs/mautrix-whatsapp.log
 # Verify database config and Matrix appservice registration
 ```
 
-**SSL certificate issues:**
+### SSL certificate issues
 ```bash
 sudo certbot certificates
 sudo certbot renew --dry-run
 ```
 
-**nginx configuration errors:**
+### Check all service versions
 ```bash
-sudo nginx -t
-# Check proxy settings and SSL certificate paths
+echo "=== Installed Versions ==="
+echo "Synapse: $(/opt/matrix/synapse-venv/bin/python -c 'import synapse; print(synapse.__version__)')"
+echo "Element: $(cat /var/www/element/version)"
+echo "WhatsApp: $(/home/matrix-ai/services/whatsapp-bridge/bin/mautrix-whatsapp --version 2>&1 | head -1)"
 ```
 
-### Service Management
+---
 
-```bash
-# Check all services
-sudo systemctl status matrix-synapse mautrix-whatsapp nginx postgresql
-
-# Restart services
-sudo systemctl restart matrix-synapse
-sudo systemctl restart mautrix-whatsapp
-
-# View logs
-sudo journalctl -f -u matrix-synapse
-sudo journalctl -f -u mautrix-whatsapp
-```
-
-### File Locations
-
-- **Matrix Config**: `/home/matrix-ai/config/matrix-synapse/`
-- **Bridge Config**: `/home/matrix-ai/config/mautrix-whatsapp/`
-- **Element Web**: `/var/www/element/`
-- **nginx Config**: `/etc/nginx/sites-available/your-domain.com`
-- **Logs**: `/home/matrix-ai/logs/`
-- **SSL Certificates**: `/etc/letsencrypt/live/your-domain.com/`
-
-## Security Considerations
-
-- **Firewall**: Only ports 22 (SSH) and 443 (HTTPS) are open
-- **Database**: PostgreSQL with secure password (stored in .env)
-- **SSL**: Strong ciphers and HSTS enabled
-- **Bridge**: Runs as non-root user with restricted permissions
-- **Updates**: Regular security updates recommended
-
-## Performance Tuning
-
-### For High-Traffic Servers
-
-1. **PostgreSQL Optimization**
-```bash
-# Edit /etc/postgresql/*/main/postgresql.conf
-shared_buffers = 256MB
-effective_cache_size = 1GB
-max_connections = 200
-```
-
-2. **nginx Optimization**
-```bash
-# Edit /etc/nginx/nginx.conf
-worker_processes auto;
-worker_connections 1024;
-keepalive_timeout 65;
-```
-
-3. **Matrix Synapse Tuning**
-```bash
-# Edit homeserver.yaml
-database:
-  args:
-    cp_min: 10
-    cp_max: 50
-```
-
-## Architecture Overview
+## Architecture
 
 ```
-Internet → nginx (SSL termination) → Matrix Synapse (port 8008)
-                ↓                           ↓
-         Element Web Client          PostgreSQL Database
-                                            ↓
-                                    WhatsApp Bridge
-                                            ↓
-                                     WhatsApp Web API
+Internet → nginx (SSL) → Matrix Synapse → PostgreSQL
+             ↓                ↓
+      Element Web Client  WhatsApp Bridge → WhatsApp Web API
+                               ↓
+                          Archiver → Supabase
 ```
 
-### Components
+### Repository Structure
 
-- **nginx**: Reverse proxy handling SSL and serving Element Web
-- **Matrix Synapse**: Core Matrix homeserver handling federation and client API
-- **PostgreSQL**: Database storing Matrix rooms, messages, and user data
-- **Element Web**: Browser-based Matrix client
-- **mautrix-whatsapp**: Bridge service connecting WhatsApp to Matrix
-- **systemd**: Service management for all components
-
-### Network Flow
-
-1. **Web Clients** → nginx → Element Web static files
-2. **Matrix API** → nginx → Matrix Synapse → PostgreSQL  
-3. **Bridge Messages** → WhatsApp API → mautrix-whatsapp → Matrix Synapse
-4. **SSL/TLS**: Handled by nginx with Let's Encrypt certificates
-
-This setup provides a complete, production-ready Matrix server with WhatsApp integration.
+```
+/home/matrix-ai/
+├── services/
+│   ├── matrix-synapse/    # Synapse configuration
+│   ├── whatsapp-bridge/   # Bridge binary + config
+│   ├── archiver/          # Message archiver
+│   └── ai/                # Future AI services
+├── scripts/               # Service management
+├── logs/                  # Service logs
+├── data/                  # Runtime data (media)
+└── docs/                  # Documentation
+```

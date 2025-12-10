@@ -13,7 +13,7 @@ async def check_and_add_new_room():
     """Check for the new room and add it to monitored_rooms."""
     
     # Load environment variables
-    env_file = "/home/matrix-ai/config/archiver/env"
+    env_file = "/home/matrix-ai/services/archiver/config/env"
     try:
         with open(env_file, 'r') as f:
             for line in f:

@@ -94,7 +94,7 @@ async def apply_migration():
 async def main():
     """Main entry point."""
     # Load environment from env file
-    env_file = "/home/matrix-ai/config/archiver/env"
+    env_file = "/home/matrix-ai/services/archiver/config/env"
     try:
         with open(env_file, 'r') as f:
             for line in f:

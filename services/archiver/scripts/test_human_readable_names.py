@@ -13,7 +13,7 @@ async def test_human_readable_names():
     """Test that human-readable names are being stored correctly."""
     
     # Load environment variables
-    env_file = "/home/matrix-ai/config/archiver/env"
+    env_file = "/home/matrix-ai/services/archiver/config/env"
     try:
         with open(env_file, 'r') as f:
             for line in f:
