@@ -25,7 +25,7 @@ if pgrep -f mautrix-whatsapp >/dev/null; then
     BRIDGE_PID=$(pgrep -f mautrix-whatsapp | head -1)
     echo "   ℹ️  WhatsApp Bridge already running (PID: $BRIDGE_PID)"
 else
-    cd /home/matrix/whatsapp
+    cd /home/matrix-ai/bin
     nohup ./mautrix-whatsapp -c /home/matrix-ai/config/mautrix-whatsapp/config.yaml > /home/matrix-ai/logs/bridge.log 2>&1 &
     BRIDGE_PID=$!
     sleep 5
