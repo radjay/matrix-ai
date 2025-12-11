@@ -171,9 +171,109 @@ class UnifiedArchiver:
             logger.warning(f"Failed to resolve display name for {user_id}: {e}")
             return user_id
 
+    def is_notice_or_error(self, event_data):
+        """Check if a message should be stored in the notices table."""
+        content = event_data.get("content", {})
+        msgtype = content.get("msgtype", "")
+        body = content.get("body", "")
+        
+        # Check if it's a notice message type
+        if msgtype == "m.notice":
+            return True
+        
+        # Check if it contains bridge state information
+        if "fi.mau.bridge_state" in content:
+            return True
+        
+        # Check if it's an error message
+        error_indicators = [
+            "not bridged",
+            "Failed to bridge",
+            "was not bridged"
+        ]
+        if any(indicator.lower() in body.lower() for indicator in error_indicators):
+            return True
+        
+        return False
+    
+    def determine_notice_type(self, event_data):
+        """Determine the type of notice."""
+        content = event_data.get("content", {})
+        
+        if "fi.mau.bridge_state" in content:
+            return "bridge_state"
+        
+        body = content.get("body", "").lower()
+        if "not bridged" in body or "failed to bridge" in body:
+            return "error"
+        if "⚠️" in content.get("body", "") or "warning" in body:
+            return "warning"
+        
+        return "info"
+    
+    async def archive_notice(self, event_data):
+        """Archive a notice/error message to Supabase notices table."""
+        try:
+            room_id = event_data.get("room_id")
+            sender = event_data.get("sender")
+            content = event_data.get("content", {})
+            
+            # Resolve human-readable names
+            room_name, room_display_name = await self.resolve_room_name(room_id)
+            sender_display_name = await self.resolve_user_display_name(sender, room_id)
+            
+            # Determine notice type
+            notice_type = self.determine_notice_type(event_data)
+            
+            # Prepare notice data
+            notice_data = {
+                "event_id": event_data.get("event_id"),
+                "room_id": room_id,
+                "room_name": room_name,
+                "room_display_name": room_display_name,
+                "sender": sender,
+                "sender_display_name": sender_display_name,
+                "timestamp": event_data.get("origin_server_ts"),
+                "message_type": event_data.get("type"),
+                "content": content,
+                "notice_type": notice_type,
+                "body": content.get("body", "")
+            }
+            
+            # Insert to Supabase
+            headers = {
+                "apikey": self.supabase_key,
+                "Authorization": f"Bearer {self.supabase_key}",
+                "Content-Type": "application/json"
+            }
+            
+            async with self.session.post(
+                f"{self.supabase_url}/rest/v1/notices",
+                json=notice_data,
+                headers=headers
+            ) as resp:
+                if resp.status in [200, 201]:
+                    logger.info(f"Archived notice {notice_data['event_id']} (type: {notice_type})")
+                    return True
+                elif resp.status == 409:
+                    logger.debug(f"Notice {notice_data['event_id']} already archived")
+                    return True
+                else:
+                    error = await resp.text()
+                    logger.error(f"Failed to archive notice: {resp.status} - {error}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Error archiving notice: {e}")
+            return False
+    
     async def archive_message(self, event_data):
         """Archive a message to Supabase."""
         try:
+            # Check if this should be stored as a notice instead
+            if self.is_notice_or_error(event_data):
+                return await self.archive_notice(event_data)
+            
             room_id = event_data.get("room_id")
             sender = event_data.get("sender")
             
