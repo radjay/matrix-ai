@@ -370,5 +370,245 @@ Internet → nginx (SSL) → Matrix Synapse → PostgreSQL
 ├── scripts/               # Service management
 ├── logs/                  # Service logs
 ├── data/                  # Runtime data (media)
+├── web/                   # Next.js web dashboard
 └── docs/                  # Documentation
 ```
+
+---
+
+## Web App Development
+
+The web dashboard is a Next.js application that provides a UI for browsing archived messages and generating AI reports.
+
+### Prerequisites
+
+- Node.js 18+ (recommend 20 LTS)
+- npm or yarn
+- Access to Supabase project (database)
+- Google AI API key (for report generation)
+
+### Local Development Setup
+
+#### 1. Clone Repository
+
+```bash
+git clone <repository-url>
+cd matrix-ai
+```
+
+#### 2. Install Dependencies
+
+```bash
+cd web
+npm install
+```
+
+#### 3. Configure Environment
+
+Create `web/.env.local` with your credentials:
+
+```bash
+# Required - Supabase connection
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# Required - Google Gemini AI for report generation
+GOOGLE_AI_API_KEY=your_gemini_api_key
+
+# Optional - Log file location (default: /home/matrix-ai/logs)
+LOG_PATH=/tmp/logs
+```
+
+> **Important**: Use the Supabase **Service Role Key** (not the anon/public key) as the web app needs server-side database access.
+
+#### 4. Start Development Server
+
+```bash
+npm run dev
+```
+
+The app will be available at `http://localhost:3001`
+
+### Web App Scripts
+
+```bash
+npm run dev      # Start dev server on port 3001
+npm run build    # Build for production
+npm run start    # Start production server
+```
+
+### Environment Variables Reference
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SUPABASE_URL` | Yes | Your Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key (server-side) |
+| `GOOGLE_AI_API_KEY` | Yes | Google Gemini API key for AI reports |
+| `LOG_PATH` | No | Path for LLM call logs (default: `/home/matrix-ai/logs`, use `disabled` to skip) |
+
+---
+
+## Web App Deployment on Render
+
+The web app can be deployed separately on [Render](https://render.com) for better performance and easier scaling.
+
+### Why Render?
+
+- **Separation of concerns**: Backend services (Matrix, archiver) stay on your VPS; web UI scales independently
+- **Auto-deploy**: Pushes to `master` automatically deploy
+- **Zero cold starts**: Starter plan ($7/mo) keeps the service warm
+- **Global CDN**: Fast loading worldwide
+
+### Deployment Steps
+
+#### 1. Create Render Account
+
+Sign up at [render.com](https://render.com) and connect your GitHub account.
+
+#### 2. Create Web Service
+
+1. Go to Render Dashboard → **New** → **Web Service**
+2. Connect your GitHub repository
+3. Configure the service:
+
+| Setting | Value |
+|---------|-------|
+| **Name** | `matrixai-web` (or your choice) |
+| **Region** | Choose closest to your users |
+| **Branch** | `master` |
+| **Root Directory** | `web` |
+| **Runtime** | `Node` |
+| **Build Command** | `npm install && npm run build` |
+| **Start Command** | `npm start` |
+| **Instance Type** | Starter ($7/mo) recommended |
+
+#### 3. Add Environment Variables
+
+In Render dashboard, go to **Environment** and add:
+
+| Key | Value |
+|-----|-------|
+| `SUPABASE_URL` | `https://your-project.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `your_service_role_key` |
+| `GOOGLE_AI_API_KEY` | `your_gemini_api_key` |
+| `LOG_PATH` | `/tmp/logs` |
+| `NODE_ENV` | `production` |
+
+> **Security**: Mark sensitive keys as "Secret" in Render to hide them from logs.
+
+#### 4. Deploy
+
+Click **Create Web Service**. Render will:
+1. Clone your repository
+2. Run `npm install && npm run build` in the `web/` directory
+3. Start the Next.js production server
+4. Provide a URL like `https://matrixai-web.onrender.com`
+
+#### 5. Custom Domain (Optional)
+
+1. In Render dashboard → **Settings** → **Custom Domains**
+2. Add your domain (e.g., `app.yourdomain.com`)
+3. Add the CNAME record to your DNS:
+   ```
+   app.yourdomain.com → matrixai-web.onrender.com
+   ```
+4. Render automatically provisions SSL certificate
+
+### Using render.yaml (Infrastructure as Code)
+
+The repository includes a `render.yaml` blueprint for automated setup:
+
+```yaml
+services:
+  - type: web
+    name: matrixai-web
+    runtime: node
+    plan: starter
+    region: frankfurt
+    rootDir: web
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GOOGLE_AI_API_KEY
+        sync: false
+      - key: LOG_PATH
+        value: /tmp/logs
+    buildFilter:
+      paths:
+        - web/**
+    healthCheckPath: /
+```
+
+To use: Render Dashboard → **Blueprints** → **New Blueprint Instance** → Select your repo.
+
+### Render Deployment Troubleshooting
+
+#### Build fails with "Cannot find module 'tailwindcss'"
+
+Ensure `tailwindcss`, `postcss`, `autoprefixer`, and `typescript` are in `dependencies` (not `devDependencies`) in `web/package.json`.
+
+#### Build fails with "Module not found"
+
+Check that all imports use relative paths or properly configured path aliases. The `@/` alias may not resolve on some build environments.
+
+#### App loads but shows "No rooms" / "No messages"
+
+1. Verify `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set correctly
+2. Check that your Supabase project allows connections from Render's IPs
+3. Ensure database migrations have been run
+
+#### Logs show "supabaseUrl is required"
+
+Environment variables are missing or not loading. Double-check they're set in Render's Environment settings.
+
+---
+
+## Deployment Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         RENDER                                   │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Web Dashboard (Next.js)                                 │   │
+│  │  - Browse messages                                       │   │
+│  │  - Generate AI reports                                   │   │
+│  │  - View media analysis                                   │   │
+│  └──────────────────────┬──────────────────────────────────┘   │
+└─────────────────────────┼───────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       SUPABASE                                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
+│  │ PostgreSQL  │  │   Storage   │  │  (Managed Cloud DB)     │ │
+│  │  - messages │  │  - media    │  │                         │ │
+│  │  - rooms    │  │    files    │  │                         │ │
+│  │  - analysis │  │             │  │                         │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
+└─────────────────────────▲───────────────────────────────────────┘
+                          │
+┌─────────────────────────┼───────────────────────────────────────┐
+│                   VPS / DIGITALOCEAN                             │
+│  ┌──────────────────────┴──────────────────────────────────┐   │
+│  │  Matrix Synapse ◄──► WhatsApp Bridge                     │   │
+│  │       │                    │                             │   │
+│  │       ▼                    ▼                             │   │
+│  │  Message Archiver    Media Analyzer                      │   │
+│  │  (archives to        (AI analysis,                       │   │
+│  │   Supabase)          uploads to Supabase)                │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow
+
+1. **WhatsApp messages** arrive via the WhatsApp Bridge into Matrix Synapse
+2. **Archiver service** monitors Matrix and stores messages to Supabase
+3. **Analyzer service** processes media with AI and stores analysis to Supabase
+4. **Web dashboard** reads from Supabase and generates reports using Google Gemini
