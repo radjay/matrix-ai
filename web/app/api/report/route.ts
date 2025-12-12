@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { logLLMCall } from '@/lib/llmLogger';
+import { logLLMCall } from '../../../lib/llmLogger';
 
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
