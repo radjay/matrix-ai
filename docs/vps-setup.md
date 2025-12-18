@@ -95,8 +95,6 @@ Wants=postgresql.service
 
 [Service]
 Type=forking
-User=matrix-ai
-Group=matrix-ai
 WorkingDirectory=/home/matrix-ai
 ExecStart=/home/matrix-ai/scripts/start-all.sh
 ExecStop=/home/matrix-ai/scripts/stop-all.sh
@@ -107,6 +105,8 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 ```
+
+**Note:** The service runs as root because the startup scripts need to manage other systemd services (matrix-synapse).
 
 ### Managing Services via systemd
 
